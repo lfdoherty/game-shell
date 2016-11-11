@@ -208,6 +208,13 @@ proto.release = function(key) {
   return lookupCount(this._releaseCount, this.bindings, key)
 }
 
+proto.doTick = function(){
+  singleTick(this)
+}
+proto.doRender = function(){
+  renderInternal(this);
+}
+
 //Pause/unpause the game loop
 Object.defineProperty(proto, "paused", {
   get: function() {
@@ -228,6 +235,16 @@ Object.defineProperty(proto, "paused", {
         this._rafHandle = requestAnimationFrame(this._render)
       }
     }
+  }
+})
+
+//Pause/unpause rendering
+Object.defineProperty(proto, "renderPaused", {
+  get: function() {
+    return !!this._renderPaused
+  },
+  set: function(state) {
+    this._renderPaused = !!state;
   }
 })
 
@@ -355,12 +372,9 @@ function setKeyState(shell, key, state) {
 
 //Ticks the game state one update
 function tick(shell) {
-  var skip = hrtime() + shell.frameSkip
-    , pCount = shell._pressCount
-    , rCount = shell._releaseCount
-    , i, s, t
-    , tr = shell._tickRate
-    , n = keyNames.length
+  var tr = shell._tickRate;
+  var skip = hrtime() + shell.frameSkip;
+
   while(!shell._paused &&
         hrtime() >= shell._lastTick + tr) {
     
@@ -370,29 +384,39 @@ function tick(shell) {
       return
     }
     
-    //Tick the game
-    s = hrtime()
-    shell.emit("tick")
-    t = hrtime()
-    shell.tickTime = t - s
-    
-    //Update counters and time
-    ++shell.tickCount
-    shell._lastTick += tr
-    
-    //Shift input state
-    for(i=0; i<n; ++i) {
-      pCount[i] = rCount[i] = 0
-    }
-    if(shell._pointerLockActive) {
-      shell.prevMouseX = shell.mouseX = shell.width>>1
-      shell.prevMouseY = shell.mouseY = shell.height>>1
-    } else {
-      shell.prevMouseX = shell.mouseX
-      shell.prevMouseY = shell.mouseY
-    }
-    shell.scroll[0] = shell.scroll[1] = shell.scroll[2] = 0
+    singleTick(shell);
   }
+}
+
+function singleTick(shell){
+  var tr = shell._tickRate;
+  var pCount = shell._pressCount
+    , rCount = shell._releaseCount
+    , i, s, t
+    , n = keyNames.length;
+
+  //Tick the game
+  s = hrtime()
+  shell.emit("tick")
+  t = hrtime()
+  shell.tickTime = t - s
+  
+  //Update counters and time
+  ++shell.tickCount
+  shell._lastTick += tr
+  
+  //Shift input state
+  for(i=0; i<n; ++i) {
+    pCount[i] = rCount[i] = 0
+  }
+  if(shell._pointerLockActive) {
+    shell.prevMouseX = shell.mouseX = shell.width>>1
+    shell.prevMouseY = shell.mouseY = shell.height>>1
+  } else {
+    shell.prevMouseX = shell.mouseX
+    shell.prevMouseY = shell.mouseY
+  }
+  shell.scroll[0] = shell.scroll[1] = shell.scroll[2] = 0
 }
 
 //Render stuff
@@ -403,7 +427,12 @@ function render(shell) {
 
   //Tick the shell
   tick(shell)
-  
+
+  if(!shell._renderPaused){
+    renderInternal(shell);
+  }  
+}
+function renderInternal(shell){
   //Compute frame time
   var dt
   if(shell._paused) {
@@ -411,14 +440,12 @@ function render(shell) {
   } else {
     dt = min(1.0, (hrtime() - shell._lastTick) / shell._tickRate)
   }
-  
   //Draw a frame
   ++shell.frameCount
   var s = hrtime()
   shell.emit("render", dt)
   var t = hrtime()
   shell.frameTime = t - s
-  
 }
 
 function isFocused(shell) {
